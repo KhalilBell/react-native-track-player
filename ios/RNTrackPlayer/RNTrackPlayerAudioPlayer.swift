@@ -41,9 +41,12 @@ public class RNTrackPlayerAudioPlayer: QueuedAudioPlayer {
 		}
 	}
 
+	public var _players: [AVAudioPlayer];
+	
 	// Override init to include a reference to the React Event Emitter.
 	public init(reactEventEmitter: RCTEventEmitter) {
         self.reactEventEmitter = reactEventEmitter
+		self._players = [AVAudioPlayer]()
 		super.init()
     }
 
@@ -73,10 +76,63 @@ public class RNTrackPlayerAudioPlayer: QueuedAudioPlayer {
 				"track": (self.currentItem as? Track)?.id,
 				"position": self.currentTime,
 				])
-		} 
+		}
 		super.AVWrapperItemDidPlayToEndTime()
     }
 
+	// MARK: - AudioPlayer
+	override public func play() {
+		if self._players.count > 0 {
+			for player in self._players {
+				player.play()
+			}
+		}
+		// Only first track is going through regular flow, we play the rest "manually"
+		var skip = true
+		for item in queueManager.items {
+			if skip {
+				skip = false;
+				continue;
+			}
+			// Retrieve sound name format: http://localhost:8081/path/to/asset/xxxx.mp3?id=xxx&hash=xxxx
+			let soundPath = item.getSourceUrl()
+			// Get xxxx.mp3?id=xxx&hash=xxxx
+			var soundURL = soundPath.split(separator: "/", maxSplits: 100, omittingEmptySubsequences: true).last
+			// Get xxx.mp3
+			soundURL = soundURL?.split(separator: "?", maxSplits: 2, omittingEmptySubsequences: true).first
+			// Get asset name
+			soundURL = soundURL?.split(separator: ".", maxSplits: 2, omittingEmptySubsequences: true).first
+			// Format name with path
+			// WARNING: be careful to put your assets under "audio" folder,
+			// Here it's the same audio asset file as the one in RN project
+			let finalPath = String.init(format: "audio/%@", String(soundURL!))
+			let urlString = Bundle.main.path(forResource: finalPath, ofType: "mp3")
+			let assetUrl = URL(fileURLWithPath: urlString!)
+			do {
+				let audioPlayer = try AVAudioPlayer(contentsOf: assetUrl)
+				self._players.append(audioPlayer)
+				audioPlayer.play()
+			} catch {
+				print(error.localizedDescription)
+			}
+		}
+		super.play()
+	}
+
+	override public func pause() {
+		for player in self._players {
+			player.pause()
+		}
+		super.pause()
+	}
+	
+	override public func stop() {
+		for player in self._players {
+			player.pause()
+		}
+		super.stop()
+	}
+		
 	// MARK: - Remote Command Center
     
 	/**
