@@ -13,7 +13,7 @@ import AVFoundation
 class Track: NSObject, AudioItem, TimePitching, AssetOptionsProviding {
     let id: String
     let url: MediaURL
-    
+	var volume: Double
     @objc var title: String
     @objc var artist: String
     
@@ -34,6 +34,7 @@ class Track: NSObject, AudioItem, TimePitching, AssetOptionsProviding {
     init?(dictionary: [String: Any]) {
         guard let id = dictionary["id"] as? String,
             let title = dictionary["title"] as? String,
+			let volume = dictionary["volume"] as? Double,
             let artist = dictionary["artist"] as? String,
             let url = MediaURL(object: dictionary["url"])
             else { return nil }
@@ -42,7 +43,7 @@ class Track: NSObject, AudioItem, TimePitching, AssetOptionsProviding {
         self.url = url
         self.title = title
         self.artist = artist
-        
+		self.volume = volume
         self.date = dictionary["date"] as? String
         self.album = dictionary["album"] as? String
         self.genre = dictionary["genre"] as? String
@@ -65,7 +66,7 @@ class Track: NSObject, AudioItem, TimePitching, AssetOptionsProviding {
     func updateMetadata(dictionary: [String: Any]) {
         self.title = (dictionary["title"] as? String) ?? self.title
         self.artist = (dictionary["artist"] as? String) ?? self.artist
-        
+		self.volume = (dictionary["volume"] as? Double) ?? 0.5
         self.date = dictionary["date"] as? String
         self.album = dictionary["album"] as? String
         self.genre = dictionary["genre"] as? String
@@ -81,6 +82,10 @@ class Track: NSObject, AudioItem, TimePitching, AssetOptionsProviding {
     func getSourceUrl() -> String {
         return url.value.absoluteString
     }
+	
+	func getVolume() -> Double {
+		return volume
+	}
     
     func getArtist() -> String? {
         return artist

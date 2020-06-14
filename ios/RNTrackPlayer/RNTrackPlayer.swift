@@ -418,6 +418,13 @@ public class RNTrackPlayer: RCTEventEmitter {
         player.volume = level
         resolve(NSNull())
     }
+	
+	@objc(setVolumeForTrack:volume:resolver:rejecter:)
+	public func setVolumeForTrack(trackId: String, volume: Float, resolve: RCTPromiseResolveBlock, reject: RCTPromiseRejectBlock) {
+        print("Setting volume to \(volume) for \(trackId)")
+		player.setVolumeForTrack(trackId: trackId, volume: volume)
+        resolve(NSNull())
+    }
     
     @objc(getVolume:rejecter:)
     public func getVolume(resolve: RCTPromiseResolveBlock, reject: RCTPromiseRejectBlock) {

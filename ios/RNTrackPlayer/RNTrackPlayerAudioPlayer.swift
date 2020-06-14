@@ -41,12 +41,13 @@ public class RNTrackPlayerAudioPlayer: QueuedAudioPlayer {
 		}
 	}
 
-	public var _players: [AVAudioPlayer];
-	
+	public var _players: Dictionary<String, AVAudioPlayer>
+	public var _mainSoundId: String
 	// Override init to include a reference to the React Event Emitter.
 	public init(reactEventEmitter: RCTEventEmitter) {
         self.reactEventEmitter = reactEventEmitter
-		self._players = [AVAudioPlayer]()
+		self._players = Dictionary<String, AVAudioPlayer>()
+		self._mainSoundId = ""
 		super.init()
     }
 
@@ -80,59 +81,87 @@ public class RNTrackPlayerAudioPlayer: QueuedAudioPlayer {
 		super.AVWrapperItemDidPlayToEndTime()
     }
 
+	func fromPathToTrack(path: String) -> String {
+		// Retrieve sound name format: http://localhost:8081/path/to/asset/xxxx.mp3?id=xxx&hash=xxxx
+		// Get xxxx.mp3?id=xxx&hash=xxxx
+		var soundURL = path.split(separator: "/", maxSplits: 100, omittingEmptySubsequences: true).last
+		// Get xxx.mp3
+		soundURL = soundURL?.split(separator: "?", maxSplits: 2, omittingEmptySubsequences: true).first
+		// Get asset name
+		soundURL = soundURL?.split(separator: ".", maxSplits: 2, omittingEmptySubsequences: true).first
+		return String(soundURL ?? "");
+	}
+	
 	// MARK: - AudioPlayer
 	override public func play() {
-		if self._players.count > 0 {
-			for player in self._players {
-				player.play()
-			}
-		}
 		// Only first track is going through regular flow, we play the rest "manually"
 		var skip = true
 		for item in queueManager.items {
-			if skip {
-				skip = false;
+			// Retrieve sound name format: http://localhost:8081/path/to/asset/xxxx.mp3?id=xxx&hash=xxxx
+			let soundURL = fromPathToTrack(path: item.getSourceUrl());
+			let title = item.getTitle() ?? ""
+			if (soundURL.count == 0 || title.count == 0) {
 				continue;
 			}
-			// Retrieve sound name format: http://localhost:8081/path/to/asset/xxxx.mp3?id=xxx&hash=xxxx
-			let soundPath = item.getSourceUrl()
-			// Get xxxx.mp3?id=xxx&hash=xxxx
-			var soundURL = soundPath.split(separator: "/", maxSplits: 100, omittingEmptySubsequences: true).last
-			// Get xxx.mp3
-			soundURL = soundURL?.split(separator: "?", maxSplits: 2, omittingEmptySubsequences: true).first
-			// Get asset name
-			soundURL = soundURL?.split(separator: ".", maxSplits: 2, omittingEmptySubsequences: true).first
+			
+			if skip {
+				skip = false;
+				self.volume = Float(item.getVolume())
+				self._mainSoundId = title
+				continue;
+			}
+			
 			// Format name with path
 			// WARNING: be careful to put your assets under "audio" folder,
 			// Here it's the same audio asset file as the one in RN project
-			let finalPath = String.init(format: "audio/%@", String(soundURL!))
+			let finalPath = String.init(format: "audio/%@", soundURL)
 			let urlString = Bundle.main.path(forResource: finalPath, ofType: "mp3")
 			let assetUrl = URL(fileURLWithPath: urlString!)
 			do {
 				let audioPlayer = try AVAudioPlayer(contentsOf: assetUrl)
-				self._players.append(audioPlayer)
+				self._players[title] = audioPlayer
+				audioPlayer.volume = Float(item.getVolume())
 				audioPlayer.play()
 			} catch {
 				print(error.localizedDescription)
 			}
 		}
 		super.play()
+		queueManager.removeUpcomingItems()
 	}
 
+	func clear() {
+		self._players.removeAll()
+		queueManager.clearQueue()
+		queueManager.removeUpcomingItems()
+	}
+	
 	override public func pause() {
-		for player in self._players {
+		for (_, player) in self._players {
 			player.pause()
 		}
 		super.pause()
+		clear()
 	}
 	
 	override public func stop() {
-		for player in self._players {
-			player.pause()
+		for (_, player) in self._players {
+			player.stop()
 		}
 		super.stop()
+		clear()
 	}
-		
+	
+	func setVolumeForTrack(trackId: String, volume: Float) {
+		if (trackId == self._mainSoundId) {
+			self.volume = volume
+			return
+		}
+		let currentPlayer = self._players[trackId]
+		if (currentPlayer != nil) {
+			currentPlayer?.setVolume(volume, fadeDuration: 0.25)
+		}
+	}
 	// MARK: - Remote Command Center
     
 	/**
