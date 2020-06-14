@@ -27,11 +27,13 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     // MARK: - Properties
     
     var avPlayer: AVPlayer
+	var assetURL: URL
+	var loopObserver: Any
     let playerObserver: AVPlayerObserver
     let playerTimeObserver: AVPlayerTimeObserver
     let playerItemNotificationObserver: AVPlayerItemNotificationObserver
     let playerItemObserver: AVPlayerItemObserver
-    
+	
     /**
      True if the last call to load(from:playWhenReady) had playWhenReady=true.
      */
@@ -54,12 +56,14 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         self.playerTimeObserver.player = avPlayer
         self.playerItemNotificationObserver = AVPlayerItemNotificationObserver()
         self.playerItemObserver = AVPlayerItemObserver()
-        
+		self.assetURL = URL(fileURLWithPath: "")
+		self.loopObserver = AVPlayerObserver()
+		
         self.playerObserver.delegate = self
         self.playerTimeObserver.delegate = self
         self.playerItemNotificationObserver.delegate = self
         self.playerItemObserver.delegate = self
-        
+
         playerTimeObserver.registerForPeriodicTimeEvents()
     }
     
@@ -132,11 +136,43 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         set { avPlayer.isMuted = newValue }
     }
     
+	func getFadeItem() -> AVPlayerItem  {
+		if let asset = self._pendingAsset {
+			let item = AVPlayerItem(asset: asset)
+			let duration = asset.duration
+			let durationInSeconds = CMTimeGetSeconds(duration)
+			let params = AVMutableAudioMixInputParameters(track: asset.tracks.first! as AVAssetTrack)
+
+			let firstSecond = CMTimeRangeMake(start: CMTimeMakeWithSeconds(0, preferredTimescale: 1), duration: CMTimeMakeWithSeconds(1, preferredTimescale: 1))
+			let lastSecond = CMTimeRangeMake(start: CMTimeMakeWithSeconds(durationInSeconds-1, preferredTimescale: 1), duration: CMTimeMakeWithSeconds(1, preferredTimescale: 1))
+
+			params.setVolumeRamp(fromStartVolume: 0, toEndVolume: 1, timeRange: firstSecond)
+			params.setVolumeRamp(fromStartVolume: 1, toEndVolume: 0, timeRange: lastSecond)
+			
+			let mix = AVMutableAudioMix()
+			mix.inputParameters = [params]
+			item.audioMix = mix
+			
+			loopObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
+				self?.avPlayer.seek(to: CMTime.zero)
+				self?.avPlayer.play()
+			}
+			return item
+		}
+		let asset = AVAsset.init(url: self.assetURL) as AVAsset
+		return AVPlayerItem(asset: asset)
+	}
+	
     func play() {
-        avPlayer.play()
+		// Item with fade in/out and loop
+		let item = self.getFadeItem()
+		avPlayer.replaceCurrentItem(with: item)
+		avPlayer.play()
     }
     
     func pause() {
+		// Remove observer for loops
+		NotificationCenter.default.removeObserver(loopObserver, name: .AVPlayerItemDidPlayToEndTime, object: self.avPlayer.currentItem)
         avPlayer.pause()
     }
     
@@ -229,6 +265,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     func load(from url: URL, playWhenReady: Bool, initialTime: TimeInterval? = nil, options: [String : Any]? = nil) {
         _initialTime = initialTime
         self.pause()
+		self.assetURL = url
         self.load(from: url, playWhenReady: playWhenReady, options: options)
     }
     
