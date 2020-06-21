@@ -25,7 +25,7 @@ import MediaPlayer
 public class RNTrackPlayerAudioPlayer: QueuedAudioPlayer {
 
 	public var reactEventEmitter: RCTEventEmitter
-
+	public var currrentItems: [AudioItem]
 	// Override _currentItem so that we can send an event when it changes.
 	override var _currentItem: AudioItem? {
 		willSet(newCurrentItem) {
@@ -48,6 +48,7 @@ public class RNTrackPlayerAudioPlayer: QueuedAudioPlayer {
         self.reactEventEmitter = reactEventEmitter
 		self._players = Dictionary<String, AVAudioPlayer>()
 		self._mainSoundId = ""
+		self.currrentItems = [AudioItem]()
 		super.init()
     }
 
@@ -94,9 +95,13 @@ public class RNTrackPlayerAudioPlayer: QueuedAudioPlayer {
 	
 	// MARK: - AudioPlayer
 	override public func play() {
+		if (queueManager.items.count > 1) {
+			self.currrentItems.removeAll()
+			self.currrentItems = queueManager.items
+		}
 		// Only first track is going through regular flow, we play the rest "manually"
 		var skip = true
-		for item in queueManager.items {
+		for item in self.currrentItems {
 			// Retrieve sound name format: http://localhost:8081/path/to/asset/xxxx.mp3?id=xxx&hash=xxxx
 			let soundURL = fromPathToTrack(path: item.getSourceUrl());
 			let title = item.getTitle() ?? ""
@@ -118,20 +123,28 @@ public class RNTrackPlayerAudioPlayer: QueuedAudioPlayer {
 			let urlString = Bundle.main.path(forResource: finalPath, ofType: "mp3")
 			let assetUrl = URL(fileURLWithPath: urlString!)
 			do {
-				let audioPlayer = try AVAudioPlayer(contentsOf: assetUrl)
-				self._players[title] = audioPlayer
-				audioPlayer.volume = Float(item.getVolume())
-				audioPlayer.play()
+				if self._players[title] != nil {
+					self._players[title]?.setVolume(Float(item.getVolume()), fadeDuration: 1000)
+					self._players[title]?.play()
+				} else {
+					let audioPlayer = try AVAudioPlayer(contentsOf: assetUrl)
+					self._players[title] = audioPlayer
+					audioPlayer.volume = Float(item.getVolume())
+					audioPlayer.play()
+				}
 			} catch {
 				print(error.localizedDescription)
 			}
 		}
 		super.play()
-		queueManager.removeUpcomingItems()
+		clear()
 	}
 
-	func clear() {
-		self._players.removeAll()
+	func clear(soft: Bool = true) {
+		if (!soft) {
+			self._players.removeAll()
+			self.currrentItems.removeAll()
+		}
 		queueManager.clearQueue()
 		queueManager.removeUpcomingItems()
 	}
@@ -149,7 +162,7 @@ public class RNTrackPlayerAudioPlayer: QueuedAudioPlayer {
 			player.stop()
 		}
 		super.stop()
-		clear()
+		clear(soft: false)
 	}
 	
 	func setVolumeForTrack(trackId: String, volume: Float) {
